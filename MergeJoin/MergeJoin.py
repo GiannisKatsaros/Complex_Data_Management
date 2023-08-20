@@ -1,9 +1,9 @@
 currentId = ""
 buffer = []
 maxBufferLength = 0
-with open("R_sorted.tsv") as fr:
-    with open("S_sorted.tsv") as fs:
-        with open("RSMergeJoin.tsv", "w") as fj:
+with open("../data/inputs/R_sorted.tsv") as fr:
+    with open("../data/inputs/S_sorted.tsv") as fs:
+        with open("../data/outputs/RSMergeJoin.tsv", "w") as fj:
             lineR = fr.readline()
             lineS = fs.readline()
             while lineR != "":
