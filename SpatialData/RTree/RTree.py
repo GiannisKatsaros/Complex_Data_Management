@@ -2,6 +2,9 @@ class Polygon:
     def __init__(self, coords, id):
         self.coords = coords
         self.id = id
+        self.calculateMBR()
+        self.calculateCenter()
+        self.calculateZorder()
 
     def calculateMBR(self):
         self.minX = self.coords[0][0]
@@ -17,12 +20,17 @@ class Polygon:
                 self.minY = coordinate[1]
             elif coordinate[1] > self.maxY:
                 self.maxY = coordinate[1]
-        return [
-            [self.minX, self.minY],
-            [self.maxX, self.minY],
-            [self.maxX, self.maxY],
-            [self.minX, self.maxY],
-        ]
+
+    def calculateCenter(self):
+        self.centerX = sum([x[0] for x in self.coords]) / len(self.coords)
+        self.centerY = sum([x[1] for x in self.coords]) / len(self.coords)
+
+    def calculateZorder(self):
+        int_X = int((self.centerX - self.minX) * 1e6)
+        int_Y = int((self.centerY - self.minY) * 1e6)
+        self.zorder = 0
+        for i in range(32):
+            self.zorder |= (int_X & (1 << i)) << i | (int_Y & (1 << i)) << (i + 1)
 
 
 def main():
@@ -52,7 +60,9 @@ def main():
                             offsets[i][0],
                         )
                     )
-                print(polygons[0].calculateMBR())
+                polygons.sort(key=lambda x: x.zorder)
+                for polygon in polygons:
+                    fr.write(str(polygon.id) + "," + str(polygon.zorder) + "\n")
 
 
 if __name__ == "__main__":
