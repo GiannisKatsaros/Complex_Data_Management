@@ -1,139 +1,139 @@
-MAX_ENTRIES = 19
+MAX_ENTRIES = 20
 MIN_ENTRIES = 8
 
 
+# calculate minimum bounding rectangle
+def calculateMBR(coordinates):
+    minX = coordinates[0][0]
+    maxX = coordinates[0][0]
+    minY = coordinates[0][1]
+    maxY = coordinates[0][1]
+    for coordinate in coordinates:
+        if coordinate[0] < minX:
+            minX = coordinate[0]
+        elif coordinate[0] > maxX:
+            maxX = coordinate[0]
+        if coordinate[1] < minY:
+            minY = coordinate[1]
+        elif coordinate[1] > maxY:
+            maxY = coordinate[1]
+    mbr = [[minX, minY], [minX, maxY], [maxX, minY], [maxX, maxY]]
+    return mbr
+
+
 class RTreeNode:
-    def __init__(self, Mbr, children=None, isLeaf=True):
-        self.Mbr = Mbr
+    def __init__(self, children=None, isLeaf=True, id=None):
         self.children = children or []
         self.isLeaf = isLeaf
-        # self.id = id
-        # self.parent = None
-
-
-class RTree:
-    def __init__(self, maxChildren=MAX_ENTRIES, minChildren=MIN_ENTRIES):
-        self.maxChildren = maxChildren
-        self.minChildren = minChildren
-        self.root = None
-
-    def calculateMBR(self, polygons):
-        minX = polygons[0].minX
-        maxX = polygons[0].maxX
-        minY = polygons[0].minY
-        maxY = polygons[0].maxY
-        for polygon in polygons:
-            if polygon.minX < minX:
-                minX = polygon.minX
-            elif polygon.maxX > maxX:
-                maxX = polygon.maxX
-            if polygon.minY < minY:
-                minY = polygon.minY
-            elif polygon.maxY > maxY:
-                maxY = polygon.maxY
-        return [minX, maxX, minY, maxY]
-
-    def buildTree(self, polygons):
-        print(len(polygons) % self.maxChildren)
-        if len(polygons) == 0:
-            return None
-        elif len(polygons) < 20:
-            return RTree(self.calculateMBR(polygons), polygons, True)
-        else:
-            splittedPolygons = []
-            if len(polygons) % self.maxChildren > self.minChildren:
-                # split into nodes of maxChildren
-                # and add the remaining to the last node
-                for i in range(0, len(polygons), self.maxChildren):
-                    splittedPolygons.append(polygons[i : i + self.maxChildren])
-            else:
-                # split into two lists, one with minChildren
-                # (remainingPolygons)
-                # and the other with the rest
-                # (reducedPolygons)
-                reducedPolygons = polygons[: len(polygons) - self.minChildren]
-                remainingPolygons = polygons[len(polygons) - self.minChildren :]
-
-                # split into nodes of maxChildren
-                # and add the remaining to the last node
-                for i in range(0, len(reducedPolygons), self.maxChildren):
-                    splittedPolygons.append(reducedPolygons[i : i + self.maxChildren])
-
-                # add the remaining polygons to the last node
-                splittedPolygons.append(remainingPolygons)
-
-            nodes = []
-            for pol in splittedPolygons:
-                nodes.append(RTreeNode(self.calculateMBR(pol), pol, False))
-            self.leaves = nodes.copy()
-            # call recursive function to build the tree
-            self.toPrint = nodes
-
-
-class Polygon:
-    def __init__(self, coords, id, withZorder=True):
-        self.coords = coords
         self.id = id
-        self.calculateMBR()
-        self.calculateCenter()
-        if withZorder:
+
+        self.calculateNodeMBR()
+
+        # calculate only if node is a leaf
+        if isLeaf:
+            self.calculateCenter()
             self.calculateZorder()
 
-    def calculateMBR(self):
-        self.minX = self.coords[0][0]
-        self.minY = self.coords[0][1]
-        self.maxX = self.coords[0][0]
-        self.maxY = self.coords[0][1]
-        for coordinate in self.coords:
-            if coordinate[0] < self.minX:
-                self.minX = coordinate[0]
-            elif coordinate[0] > self.maxX:
-                self.maxX = coordinate[0]
-            if coordinate[1] < self.minY:
-                self.minY = coordinate[1]
-            elif coordinate[1] > self.maxY:
-                self.maxY = coordinate[1]
-        self.MBR = [self.minX, self.maxX, self.minY, self.maxY]
+    # calculate minimum bounding rectangle
+    def calculateNodeMBR(self):
+        if self.isLeaf:
+            self.MBR = calculateMBR(self.children)
+        else:
+            self.MBR = calculateMBR(
+                [coord for child in self.children for coord in child.MBR]
+            )
 
+    # calculate center of MBR
     def calculateCenter(self):
-        self.centerX = sum([x[0] for x in self.coords]) / len(self.coords)
-        self.centerY = sum([x[1] for x in self.coords]) / len(self.coords)
+        self.centerX = self.MBR[0][0] + (self.MBR[2][0] - self.MBR[0][0]) / 2
+        self.centerY = self.MBR[0][1] + (self.MBR[1][1] - self.MBR[0][1]) / 2
 
+    # calculate z-order
     def calculateZorder(self):
-        int_X = int((self.centerX - self.minX) * 1e6)
-        int_Y = int((self.centerY - self.minY) * 1e6)
+        int_X = int((self.centerX - self.MBR[0][0]) * 1e6)
+        int_Y = int((self.centerY - self.MBR[0][1]) * 1e6)
         self.zorder = 0
         for i in range(32):
             self.zorder |= (int_X & (1 << i)) << i | (int_Y & (1 << i)) << (i + 1)
 
 
-def printPolygons(fr, polygons):
-    for polygon in polygons:
-        fr.write(
-            "id: "
-            + str(polygon.id)
-            + "\t\tz-order: "
-            + str(polygon.zorder)
-            + "\t\tMBR: "
-            + str(polygon.MBR)
-            + "\n"
-        )
+class RTree:
+    def __init__(self, startingId=0, maxChildren=MAX_ENTRIES, minChildren=MIN_ENTRIES):
+        self.startingId = startingId
+        self.maxChildren = maxChildren
+        self.minChildren = minChildren
+        self.root = None
+
+    def buildTree(self, nodes):
+        if len(nodes) == 0:
+            return None
+        elif len(nodes) < 20:
+            self.root = RTreeNode(nodes, False, self.startingId)
+            return self.root
+        else:
+            splittedNodes = []
+            if (
+                len(nodes) % self.maxChildren > self.minChildren
+                or len(nodes) % self.maxChildren == 0
+            ):
+                # split into nodes of maxChildren
+                # and add the remaining to the last node
+                for i in range(0, len(nodes), self.maxChildren):
+                    splittedNodes.append(nodes[i : i + self.maxChildren])
+
+            else:
+                # split into two lists, one with minChildren
+                # (remainingNodes)
+                # and the other with the rest
+                # (reducedNodes)
+                reducedNodes = nodes[: len(nodes) - self.minChildren]
+                remainingNodes = nodes[len(nodes) - self.minChildren :]
+
+                # split into nodes of maxChildren
+                # and add the remaining to the last node
+                for i in range(0, len(reducedNodes), self.maxChildren):
+                    splittedNodes.append(reducedNodes[i : i + self.maxChildren])
+
+                # add the remaining polygons to the last node
+                splittedNodes.append(remainingNodes)
+
+            # create new nodes
+            for i in range(len(splittedNodes)):
+                splittedNodes[i] = RTreeNode(
+                    splittedNodes[i], isLeaf=False, id=self.startingId
+                )
+                self.startingId += 1
+
+            # call recursive function to build the tree
+            return self.buildTree(splittedNodes)
 
 
-""" def printSplittedPolygons(fr, splittedPolygons):
-    for splittedPolygon in splittedPolygons:
-        fr.write("length: " + str(len(splittedPolygon)) + "\n")
-        for polygon in splittedPolygon:
-            fr.write("id: " + str(polygon.id) + "\t\tMBR: " + str(polygon.MBR) + "\n")
-        fr.write("\n") """
+def writeToFile(fr, node, level=0):
+    if node is None:
+        return
 
+    indent = "|\t\t" * level
+    id = "Id: " + str(node.id) + "\t" + ("" if len(str(node.id)) > 3 else "\t")
+    type = "Type: " + ("Leaf" if node.isLeaf else "Node") + "\t"
+    size = "" if node.isLeaf else "Size: " + str(len(node.children)) + "\t"
+    mbr = (
+        "MBR: ["
+        + str(node.MBR[0][0])
+        + ", "
+        + str(node.MBR[2][0])
+        + ", "
+        + str(node.MBR[0][1])
+        + ", "
+        + str(node.MBR[1][1])
+        + "]"
+        + "\t"
+    )
 
-def printSplittedPolygons(fr, nodes):
-    for node in nodes:
-        fr.write("MBR: " + str(node.Mbr) + "\t\t#: " + str(len(node.children)) + "\n")
-        for polygon in node.children:
-            fr.write("id: " + str(polygon.id) + "\t\tMBR: " + str(polygon.MBR) + "\n")
-        fr.write("\n")
+    fr.write(f"{indent}{id}{type}{size}MBR: {mbr}\n")
+
+    if not node.isLeaf:
+        for child in node.children:
+            writeToFile(fr, child, level + 1)
 
 
 def main():
@@ -143,12 +143,16 @@ def main():
                 coords = []
                 offsets = []
                 polygons = []
+
+                nodes = []
+
+                # read coords
                 for line in fc:
                     xCoord, yCoord = line.strip("\n").split(",")
                     xCoord = float(xCoord)
                     yCoord = float(yCoord)
                     coords.append([xCoord, yCoord])
-
+                # read offsets
                 for line in fo:
                     id, start, end = line.strip("\n").split(",")
                     id = int(id)
@@ -157,17 +161,16 @@ def main():
                     offsets.append([id, start, end])
 
                 for i in range(len(offsets)):
-                    polygons.append(
-                        Polygon(
-                            coords[offsets[i][1] : offsets[i][2]],
-                            offsets[i][0],
+                    nodes.append(
+                        RTreeNode(
+                            coords[offsets[i][1] : offsets[i][2]], True, offsets[i][0]
                         )
                     )
-                polygons.sort(key=lambda x: x.zorder)
-                # printPolygons(fr, polygons)
-                rTree = RTree()
-                rTree.buildTree(polygons)
-                printSplittedPolygons(fr, rTree.toPrint)
+                nodes.sort(key=lambda x: x.zorder)
+
+                rTree = RTree(startingId=offsets[-1][0] + 1)
+                rTree.buildTree(nodes)
+                writeToFile(fr, rTree.root)
 
 
 if __name__ == "__main__":
