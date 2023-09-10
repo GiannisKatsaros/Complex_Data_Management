@@ -129,7 +129,7 @@ def writeToFile(fr, node, level=0):
         + "\t"
     )
 
-    fr.write(f"{indent}{id}{type}{size}MBR: {mbr}\n")
+    fr.write(f"{indent}{id}{type}{size}{mbr}\n")
 
     if not node.isLeaf:
         for child in node.children:
