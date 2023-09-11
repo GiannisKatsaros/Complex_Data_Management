@@ -1,5 +1,8 @@
 MAX_ENTRIES = 20
 MIN_ENTRIES = 8
+NUM_NEIGHBORS = 10
+
+import heapq
 
 
 # calculate minimum bounding rectangle
@@ -69,7 +72,23 @@ class RTreeNode:
             and self.yHigh >= mbr[1]
         )
 
-    # check if polygon intersects with another MBR
+    # calculate distance between MBR and point
+    def calculateDistance(self, point):
+        if self.xLow <= point[0] <= self.xHigh and self.yLow <= point[1] <= self.yHigh:
+            return 0
+        elif self.xLow <= point[0] <= self.xHigh:
+            return min(abs(self.yLow - point[1]), abs(self.yHigh - point[1]))
+        elif self.yLow <= point[1] <= self.yHigh:
+            return min(abs(self.xLow - point[0]), abs(self.xHigh - point[0]))
+        else:
+            return min(
+                abs(self.xLow - point[0]),
+                abs(self.xHigh - point[0]),
+                abs(self.yLow - point[1]),
+                abs(self.yHigh - point[1]),
+            )
+
+    # TODO check if polygon intersects with another MBR
     # use ray casting algorithm ?
     # use shapely ?
 
@@ -124,6 +143,7 @@ class RTree:
             # call recursive function to build the tree
             return self.buildTree(splittedNodes)
 
+    # range query
     def rangeQuery(self, intersections, query, node):
         if node.intersectsMBR(query):
             if node.isLeaf:
@@ -131,6 +151,30 @@ class RTree:
             else:
                 for child in node.children:
                     self.rangeQuery(intersections, query, child)
+
+    # best first nearest neighbors query
+    def nnQuery(self, nn, query, node):
+        priorityQueue = []
+        for child in node.children:
+            heapq.heappush(
+                priorityQueue, (float(child.calculateDistance(query)), child.id, child)
+            )
+        while len(priorityQueue) > 0:
+            prio, id, child = heapq.heappop(priorityQueue)
+            if child.isLeaf:
+                nn.append(child.id)
+                if len(nn) == NUM_NEIGHBORS:
+                    return
+            else:
+                for grandchild in child.children:
+                    heapq.heappush(
+                        priorityQueue,
+                        (
+                            float(grandchild.calculateDistance(query)),
+                            grandchild.id,
+                            grandchild,
+                        ),
+                    )
 
 
 def writeRtreeToFile(fr, node, level=0):
@@ -173,11 +217,20 @@ def writeIntersectionsToFile(fi, queries, intersections):
         fi.write(f"{query}{intersec}\n")
 
 
+def writeNearestNeighborsToFile(fn, nnqueries, nn):
+    fn.write(f"Number of Neighbours: {NUM_NEIGHBORS}\n")
+    for i in range(len(nnqueries)):
+        query = "Query " + str(i + 1) + ": " + str(nnqueries[i]) + "\t"
+        intersec = "Nearest Neighbors (" + str(len(nn[i])) + ") : \t" + str(nn[i])
+        fn.write(f"{query}{intersec}\n")
+
+
 def main():
     coords = []
     offsets = []
     nodes = []
     queries = []
+    nnqueries = []
 
     # read coords
     with open("../data/inputs/coords.txt") as fc:
@@ -206,6 +259,16 @@ def main():
             yHigh = float(yHigh)
             queries.append([xLow, yLow, xHigh, yHigh])
 
+    # read nnqueries
+    with open("../data/inputs/nnqueries.txt") as fn:
+        for line in fn:
+            xCoord, yCoord = line.strip("\n").split(" ")
+            xCoord = float(xCoord)
+            yCoord = float(yCoord)
+            nnqueries.append([xCoord, yCoord])
+
+    print("Building RTree...")
+
     # create leaf nodes
     for i in range(len(offsets)):
         nodes.append(
@@ -219,6 +282,8 @@ def main():
     with open("../data/outputs/rtree.txt", "w") as fr:
         writeRtreeToFile(fr, rTree.root)
 
+    print("Running range queries...")
+
     # range query
     intersections = []
     for query in queries:
@@ -230,6 +295,20 @@ def main():
     # write intersections to file
     with open("../data/outputs/intersections.txt", "w") as fi:
         writeIntersectionsToFile(fi, queries, intersections)
+
+    print("Running nearest neighbors queries...")
+
+    # best first nearest neighbors query
+    nn = []
+    for nnquery in nnqueries:
+        currentNN = []
+        rTree.nnQuery(currentNN, nnquery, rTree.root)
+        nn.append(currentNN)
+        currentNN = []
+
+    # write nearest neighbors to file
+    with open("../data/outputs/nieghbours.txt", "w") as fn:
+        writeNearestNeighborsToFile(fn, nnqueries, nn)
 
 
 if __name__ == "__main__":
