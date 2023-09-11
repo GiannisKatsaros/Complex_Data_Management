@@ -42,6 +42,10 @@ class RTreeNode:
             self.MBR = calculateMBR(
                 [coord for child in self.children for coord in child.MBR]
             )
+        self.xLow = self.MBR[0][0]
+        self.yLow = self.MBR[0][1]
+        self.xHigh = self.MBR[2][0]
+        self.yHigh = self.MBR[1][1]
 
     # calculate center of MBR
     def calculateCenter(self):
@@ -55,6 +59,19 @@ class RTreeNode:
         self.zorder = 0
         for i in range(32):
             self.zorder |= (int_X & (1 << i)) << i | (int_Y & (1 << i)) << (i + 1)
+
+    #  check if MBR intersects with another MBR
+    def intersectsMBR(self, mbr):
+        return (
+            self.xLow <= mbr[2]
+            and self.xHigh >= mbr[0]
+            and self.yLow <= mbr[3]
+            and self.yHigh >= mbr[1]
+        )
+
+    # check if polygon intersects with another MBR
+    # use ray casting algorithm ?
+    # use shapely ?
 
 
 class RTree:
@@ -107,8 +124,16 @@ class RTree:
             # call recursive function to build the tree
             return self.buildTree(splittedNodes)
 
+    def rangeQuery(self, intersections, query, node):
+        if node.intersectsMBR(query):
+            if node.isLeaf:
+                intersections.append(node.id)
+            else:
+                for child in node.children:
+                    self.rangeQuery(intersections, query, child)
 
-def writeToFile(fr, node, level=0):
+
+def writeRtreeToFile(fr, node, level=0):
     if node is None:
         return
 
@@ -133,44 +158,78 @@ def writeToFile(fr, node, level=0):
 
     if not node.isLeaf:
         for child in node.children:
-            writeToFile(fr, child, level + 1)
+            writeRtreeToFile(fr, child, level + 1)
+
+
+def writeIntersectionsToFile(fi, queries, intersections):
+    for i in range(len(queries)):
+        query = "Query " + str(i + 1) + ": " + str(queries[i]) + "\t"
+        intersec = (
+            "Intersections ("
+            + str(len(intersections[i]))
+            + ") : \t"
+            + str(intersections[i])
+        )
+        fi.write(f"{query}{intersec}\n")
 
 
 def main():
+    coords = []
+    offsets = []
+    nodes = []
+    queries = []
+
+    # read coords
     with open("../data/inputs/coords.txt") as fc:
-        with open("../data/inputs/offsets.txt") as fo:
-            with open("../data/outputs/rtree.txt", "w") as fr:
-                coords = []
-                offsets = []
-                polygons = []
+        for line in fc:
+            xCoord, yCoord = line.strip("\n").split(",")
+            xCoord = float(xCoord)
+            yCoord = float(yCoord)
+            coords.append([xCoord, yCoord])
 
-                nodes = []
+    # read offsets
+    with open("../data/inputs/offsets.txt") as fo:
+        for line in fo:
+            id, start, end = line.strip("\n").split(",")
+            id = int(id)
+            start = int(start)
+            end = int(end)
+            offsets.append([id, start, end])
 
-                # read coords
-                for line in fc:
-                    xCoord, yCoord = line.strip("\n").split(",")
-                    xCoord = float(xCoord)
-                    yCoord = float(yCoord)
-                    coords.append([xCoord, yCoord])
-                # read offsets
-                for line in fo:
-                    id, start, end = line.strip("\n").split(",")
-                    id = int(id)
-                    start = int(start)
-                    end = int(end)
-                    offsets.append([id, start, end])
+    # read queries
+    with open("../data/inputs/queries.txt") as fq:
+        for line in fq:
+            xLow, yLow, xHigh, yHigh = line.strip("\n").split(" ")
+            xLow = float(xLow)
+            yLow = float(yLow)
+            xHigh = float(xHigh)
+            yHigh = float(yHigh)
+            queries.append([xLow, yLow, xHigh, yHigh])
 
-                for i in range(len(offsets)):
-                    nodes.append(
-                        RTreeNode(
-                            coords[offsets[i][1] : offsets[i][2]], True, offsets[i][0]
-                        )
-                    )
-                nodes.sort(key=lambda x: x.zorder)
+    # create leaf nodes
+    for i in range(len(offsets)):
+        nodes.append(
+            RTreeNode(coords[offsets[i][1] : offsets[i][2]], True, offsets[i][0])
+        )
+    nodes.sort(key=lambda x: x.zorder)
+    rTree = RTree(startingId=offsets[-1][0] + 1)
+    rTree.buildTree(nodes)
 
-                rTree = RTree(startingId=offsets[-1][0] + 1)
-                rTree.buildTree(nodes)
-                writeToFile(fr, rTree.root)
+    # write rtree to file
+    with open("../data/outputs/rtree.txt", "w") as fr:
+        writeRtreeToFile(fr, rTree.root)
+
+    # range query
+    intersections = []
+    for query in queries:
+        currentIntresections = []
+        rTree.rangeQuery(currentIntresections, query, rTree.root)
+        intersections.append(currentIntresections)
+        currentIntresections = []
+
+    # write intersections to file
+    with open("../data/outputs/intersections.txt", "w") as fi:
+        writeIntersectionsToFile(fi, queries, intersections)
 
 
 if __name__ == "__main__":
