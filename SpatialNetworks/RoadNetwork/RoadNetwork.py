@@ -127,7 +127,6 @@ def aStar(startId, endId, nodes):
         # if the top node is the end node, break
         # shortest path is found
         if currentNodeId == endId:
-            print("found")
             break
 
         # if the top node distance is greater than the
